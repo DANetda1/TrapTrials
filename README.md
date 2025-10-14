@@ -1,55 +1,14 @@
-## Контекстная диаграмма (Mermaid)
+# STRIDE — Reading List API
 
-```mermaid
-flowchart LR
-  %% Trust Boundaries
-  subgraph TB1["Client Boundary"]
-    U["User / Client"]
-  end
-
-  subgraph TB2["Edge Boundary"]
-    G["Reverse Proxy / API Gateway"]
-  end
-
-  subgraph TB3["Core Boundary"]
-    A["FastAPI App (main.py)"]
-    RL["ReadingList Service"]
-  end
-
-  subgraph TB4["Data Boundary"]
-    S["Storage (In-Memory / DB)"]
-    L["Logs / Metrics"]
-  end
-
-  %% Flows
-  U -- "F1: HTTPS GET/POST" --> G
-  G -- "F2: HTTP (internal)" --> A
-  A -- "F3: Internal call" --> RL
-  RL -- "F4: Read/Write" --> S
-  A -- "F5: Errors/Events" --> L
-  U -- "F6: CORS Preflight" --> G
-  U -- "F7: Auth Headers/JWT?" --> G
-  A -- "F8: Response + Security Headers" --> U
-```
-
-## Описание модели
-
-Диаграмма отражает потоки данных и границы доверия для сервиса **Reading List API**.
-
-**Уровни и границы доверия:**
-- **Client Boundary** — браузер пользователя или фронтенд.
-- **Edge Boundary** — обратный прокси или API Gateway, принимает внешние запросы.
-- **Core Boundary** — основное приложение FastAPI и сервис управления списками чтения.
-- **Data Boundary** — хранилище данных и система логирования/метрик.
-
-**Основные потоки данных (F1–F8):**
-| ID | Источник → Приёмник | Канал / Протокол | Описание |
-|----|---------------------|------------------|-----------|
-| F1 | Клиент → Gateway | HTTPS | Внешний запрос на API |
-| F2 | Gateway → FastAPI | HTTP (internal) | Внутренний вызов приложения |
-| F3 | FastAPI → Service | Internal call | Обработка бизнес-логики |
-| F4 | Service → Storage | Read/Write | Запись/чтение данных |
-| F5 | FastAPI → Logs | Internal | Ошибки, события |
-| F6 | Клиент → Gateway | HTTPS | CORS preflight |
-| F7 | Клиент → Gateway | HTTPS | Аутентификация (JWT Headers) |
-| F8 | FastAPI → Клиент | HTTPS | Ответ с безопасными заголовками |
+| Узел/Поток | Угроза | STRIDE | Риск-кейс (кратко) | Контроль | Связанный NFR | Проверка |
+|---|---|---|---|---|---|---|
+| F1 (HTTPS от клиента) | Подмена источника | Spoofing | Поддельный Origin | CORS allowlist | NFR-4 | pytest/curl |
+| F1/F7 | Перехват токена | Tampering/Info Disclosure | Кража/повтор JWT | TTL токена, HTTPS, `secure` куки | NFR-6/NFR-4 | тесты/ревью |
+| F2 (Edge→App) | Downgrade/митм внутри сети | Tampering | Неавторизованный доступ к внутреннему API | mTLS/сегментация сети | NFR-5 | ревью/инфраструктура |
+| F3 (App→Service) | Эскалация прав | Elevation of Privilege | Неправильные проверки | Валидация входа, схемы | NFR-7 | pytest |
+| F4 (Service→Storage) | Неконтролируемая запись | Tampering | Переполнение/инъекция | Валидация, лимиты | NFR-2/NFR-7 | pytest |
+| F5 (Ошибки/Логи) | Утечка PII/секретов | Information Disclosure | Секреты в логах | Маскирование/фильтры | NFR-5 | ревью/линтер |
+| F6 (CORS Preflight) | Неверный CORS | Repudiation | Разрешение злоумышленного источника | Жёсткий allowlist | NFR-4 | pytest |
+| F8 (Ответы клиенту) | Отсутствие sec-заголовков | Tampering | XSS/Clickjacking | Security Headers | NFR-1 | pytest/curl |
+| Узел App | Зависимости с CVE | Denial of Service | Уязвимости в пакетах | `pip-audit` в CI | NFR-8 | CI |
+| Узел App | Высокая латентность | Denial of Service | p95 выше порога | Оптимизация/профилинг | NFR-6 | нагруз. тест |
