@@ -30,6 +30,7 @@ flowchart LR
   U -- "F6: CORS Preflight" --> G
   U -- "F7: Auth Headers/JWT?" --> G
   A -- "F8: Response + Security Headers" --> U
+```
 
 ## Описание модели
 
