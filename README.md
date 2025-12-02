@@ -1,223 +1,429 @@
-# Ответы на задания семинара 6
+# Решение задач по хранимым процедурам и функциям
 
-## Часть 1: Select
+## Задания
 
-### Вопрос 1
-Показать все названия книг вместе с именами издателей.
+### Задание 1. Создание хранимой процедуры.
 
+**Цель:** процедура добавляет новую должность в таблицу `JOBS`. Максимальная зарплата для новой должности устанавливается как удвоенная минимальная зарплата.
+
+a. Создайте хранимую процедуру с именем `NEW_JOB`, которая принимает три параметра:
+- Идентификатор должности (`job_id`),
+- Название должности (`job_title`),
+- Минимальную зарплату (`min_salary`).
+
+Ответ:
 ```sql
-SELECT b.Title,
-       p.PubName
-FROM Book b
-LEFT JOIN Publisher p
-    ON b.Publisher_Name = p.PubName;
-```
-
-### Вопрос 2
-В какой книге наибольшее количество страниц?
-
-```sql
-SELECT Title,
-       Number_of_pages
-FROM Book
-WHERE Number_of_pages = (
-    SELECT MAX(Number_of_pages)
-    FROM Book
-);
-```
-
-### Вопрос 3
-Какие авторы написали более 5 книг?
-
-```sql
-SELECT Author
-FROM Book
-GROUP BY Author
-HAVING COUNT(*) > 5;
-```
-
-### Вопрос 4
-В каких книгах более чем в два раза больше страниц, чем среднее количество страниц для всех книг?
-
-```sql
-SELECT Title,
-       Number_of_pages
-FROM Book
-WHERE Number_of_pages > 2 * (
-    SELECT AVG(Number_of_pages)
-    FROM Book
-);
-```
-
-### Вопрос 5
-Какие категории содержат подкатегории?
-
-```sql
-SELECT DISTINCT c.CategoryName
-FROM Category c
-WHERE EXISTS (
-    SELECT 1
-    FROM Category sub
-    WHERE sub.ParentCat = c.CategoryName
-);
-```
-
-### Вопрос 6
-У какого автора (предположим, что имена авторов уникальны) написано максимальное количество книг?
-
-```sql
-SELECT Author
-FROM Book
-GROUP BY Author
-ORDER BY COUNT(*) DESC
-LIMIT 1;
-```
-
-### Вопрос 7
-Какие читатели забронировали все книги (не копии), написанные "Марком Твеном"?
-
-```sql
-SELECT r.LastName, r.FirstName
-FROM Reader r
-WHERE EXISTS (SELECT 1 FROM Book WHERE Author = 'Марк Твен')
-  AND NOT EXISTS (
-        SELECT 1
-        FROM Book b
-        WHERE b.Author = 'Марк Твен'
-          AND NOT EXISTS (
-              SELECT 1
-              FROM Borrowing br
-              WHERE br.ID = r.ID
-                AND br.ISBN = b.ISBN
-          )
-  );
-```
-
-### Вопрос 8
-Какие книги имеют более одной копии?
-
-```sql
-SELECT b.Title,
-       c.ISBN,
-       COUNT(*) AS copies_count
-FROM Copy c
-JOIN Book b
-    ON b.ISBN = c.ISBN
-GROUP BY b.Title, c.ISBN
-HAVING COUNT(*) > 1;
-```
-
-### Вопрос 9
-ТОП 10 самых старых книг
-
-```sql
-SELECT Title,
-       Year
-FROM Book
-ORDER BY Year
-LIMIT 10;
-```
-
-### Вопрос 10
-Перечислите все категории в категории "Спорт" (с любым уровнем вложености).
-
-```sql
-WITH RECURSIVE CategoryTree AS (
-    SELECT c.CategoryName,
-           c.ParentCat
-    FROM Category c
-    WHERE c.CategoryName = 'Спорт'
-
-    UNION ALL
-
-    SELECT c2.CategoryName,
-           c2.ParentCat
-    FROM Category c2
-    JOIN CategoryTree ct
-      ON c2.ParentCat = ct.CategoryName
+create or replace procedure new_job(
+    p_job_id     varchar(10),
+    p_job_title  varchar(35),
+    p_min_salary integer
 )
-SELECT CategoryName
-FROM CategoryTree;
+language plpgsql
+as $$
+begin
+    insert into jobs (job_id, job_title, min_salary, max_salary)
+    values (
+        p_job_id,
+        p_job_title,
+        p_min_salary,
+        p_min_salary * 2
+    );
+end;
+$$;
 ```
 
-## Часть 2: Insert / Update / Delete
+b. Выполните процедуру, добавив должность со следующими параметрами:
+- `job_id`: `'SY_ANAL'`
+- `job_title`: `'System Analyst'`
+- `min_salary`: `6000`
 
-### Вопрос 1
-Добавьте запись о бронировании читателем 'Василеем Петровым' книги с ISBN 123456 и номером копии 4.
-
+Ответ:
 ```sql
-INSERT INTO Borrowing (ID, ISBN, CopyNumber, ReturnDate)
-SELECT r.ID,
-       '123456' AS ISBN,
-       4        AS CopyNumber,
-       NULL     AS ReturnDate
-FROM Reader r
-WHERE r.LastName = 'Петров'
-  AND r.FirstName = 'Василий';
+call new_job('SY_ANAL', 'System Analyst', 6000);
 ```
 
-### Вопрос 2
-Удалить все книги, год публикации которых превышает 2000 год.
+---
 
+### Задание 2. Создание хранимой процедуры.
+
+**Цель:** Добавить запись в историю изменения должности сотрудника и обновить данные сотрудника.
+
+a. Создайте процедуру с именем `ADD_JOB_HIST`, которая принимает два параметра:
+- Идентификатор сотрудника (`employee_id`),
+- Новый идентификатор должности (`job_id`).
+
+Процедура должна:
+- Добавить новую запись в `JOB_HISTORY` с текущей датой найма сотрудника в качестве даты начала и сегодняшней датой в качестве даты окончания.
+- Обновить дату найма сотрудника в таблице `EMPLOYEES` на сегодняшнюю дату.
+- Изменить должность сотрудника на новую и установить его зарплату как минимальная зарплата этой должности плюс 500.
+- Добавить обработку исключений на случай, если сотрудник не существует.
+
+Ответ:
 ```sql
-DELETE FROM Book
-WHERE Year > 2000;
+create or replace procedure add_job_hist(
+    p_employee_id integer,
+    p_job_id      varchar(10)
+)
+language plpgsql
+as $$
+declare
+    v_hire_date     date;
+    v_old_job_id    varchar(10);
+    v_department_id integer;
+    v_min_salary    integer;
+begin
+    select hire_date, job_id, department_id
+    into v_hire_date, v_old_job_id, v_department_id
+    from employees
+    where employee_id = p_employee_id;
+
+    if not found then
+        raise exception 'Сотрудник с id % не существует', p_employee_id;
+    end if;
+
+    insert into job_history(employee_id, start_date, end_date, job_id, department_id)
+    values (p_employee_id, v_hire_date, current_date, v_old_job_id, v_department_id);
+
+    select min_salary
+    into v_min_salary
+    from jobs
+    where job_id = p_job_id;
+
+    update employees
+    set job_id    = p_job_id,
+        hire_date = current_date,
+        salary    = v_min_salary + 500
+    where employee_id = p_employee_id;
+end;
+$$;
 ```
 
-### Вопрос 3
-Измените дату возврата для всех книг категории "Базы данных", начиная с 01.01.2016, чтобы они были в заимствовании на 30 дней дольше (предположим, что в SQL можно добавлять числа к датам).
+b. Отключите триггеры на таблицах `EMPLOYEES`, `JOBS`, `JOB_HISTORY`.
 
+Ответ:
 ```sql
-UPDATE Borrowing b
-SET ReturnDate = ReturnDate + INTERVAL '30 days'
-WHERE ReturnDate >= DATE '2016-01-01'
-  AND b.ISBN IN (
-      SELECT bc.ISBN
-      FROM BookCategory bc
-      WHERE bc.CategoryName = 'Базы данных'
-  );
+alter table employees   disable trigger all;
+alter table jobs        disable trigger all;
+alter table job_history disable trigger all;
 ```
 
-## Часть 3: Интерпретация запросов
+c. Выполните процедуру с параметрами:
+- `employee_id`: `106`
+- `job_id`: `'SY_ANAL'`
 
-### Запрос 1
-
+Ответ:
 ```sql
-SELECT s.Name, s.MatrNr FROM Student s
-WHERE NOT EXISTS (
-SELECT * FROM Check c WHERE c.MatrNr = s.MatrNr AND c.Note >= 4.0 ) ;
+call add_job_hist(106, 'SY_ANAL');
 ```
 
-**Опишите на русском языке результат запроса выше:**
+Вставьте скриншот результата выполнения.
+![Результат выполнения процедуры](./images/sem08_01.png)
 
-Запрос выбирает имена и номера тех студентов, у которых нет ни одной записи в таблице "Check" с "Note" >= 4.0
+d. Выполните запросы для проверки изменений в таблицах `JOB_HISTORY` и `EMPLOYEES`.
 
-### Запрос 2
+Ответ:
 ```sql
-( SELECT p.ProfNr, p.Name, sum(lec.Credit)
-FROM Professor p, Lecture lec
-WHERE p.ProfNr = lec.ProfNr
-GROUP BY p.ProfNr, p.Name)
-UNION
-( SELECT p.ProfNr, p.Name, 0
-FROM Professor p
-WHERE NOT EXISTS (
-SELECT * FROM Lecture lec WHERE lec.ProfNr = p.ProfNr ));
+select *
+from job_history
+where employee_id = 106;
+
+select *
+from employees
+where employee_id = 106;
 ```
 
-**Опишите на русском языке результат запроса выше:**
+Вставьте скриншоты результатов.
+![Результат выполнения запроса](./images/sem08_02.png)
 
-Запрос возвращает всех профессоров и суммарное кол-во кредитов по их лекциям. Сперва берутся профессоры, которые читают минимум 1 лекцию и считается сумма "Credit" по их лекциям. Если же у профессора нет ни одной лекции, то для них в сумму "Credit" подставляется 0. Результат это список все профессоров с их общим числом кредитов, подсчитанные их лекциями.
+e. Зафиксируйте изменения (commit).
 
-### Запрос 3
+f. Включите триггеры обратно.
+
+Ответ:
 ```sql
-SELECT s.Name, p.Note
-FROM Student s, Lecture lec, Check c
-WHERE s.MatrNr = c.MatrNr AND lec.LectNr = c.LectNr AND c.Note >= 4
-AND c.Note >= ALL (
-SELECT c1.Note FROM Check c1 WHERE c1.MatrNr = c.MatrNr )
+alter table employees   enable trigger all;
+alter table jobs        enable trigger all;
+alter table job_history enable trigger all;
 ```
 
-**Опишите на русском языке результат запроса выше:**
+---
 
-Запрос выбирает имена студентов и их оценки по лекциям. Для студентов берутся строки из "Check", в которых "Note" >= 4.0 и этот "Note" должен быть не меньше всех остальных "Note". Результат это студенты и их максимальные оценки, >=4 по лекциям.
+### Задание 3. Создание хранимой процедуры.
+
+**Цель:** Обновить диапазон зарплат для указанной должности с обработкой исключений.
+
+a. Создайте процедуру `UPD_JOBSAL`, принимающую три параметра:
+- Идентификатор должности (`job_id`),
+- Новую минимальную зарплату (`min_salary`),
+- Новую максимальную зарплату (`max_salary`).
+
+Добавьте обработку исключений:
+- Если указан несуществующий идентификатор должности;
+- Если максимальная зарплата меньше минимальной;
+- Если строка заблокирована (используйте FOR UPDATE NOWAIT).
+
+Ответ:
+```sql
+create or replace procedure upd_jobsal(
+    p_job_id      varchar(10),
+    p_min_salary  integer,
+    p_max_salary  integer
+)
+language plpgsql
+as $$
+declare
+    v_dummy integer;
+begin
+    if p_max_salary < p_min_salary then
+        raise exception 'Максимальная зарплата % меньше, чем минимальная %', p_max_salary, p_min_salary;
+    end if;
+
+    begin
+        select 1
+        into v_dummy
+        from jobs
+        where job_id = p_job_id
+        for update nowait;
+    exception
+        when no_data_found then
+            raise exception 'Работа с id % не существует', p_job_id;
+        when lock_not_available then
+            raise exception 'Строка для job id % заблокирована', p_job_id;
+    end;
+
+    update jobs
+    set min_salary = p_min_salary,
+        max_salary = p_max_salary
+    where job_id = p_job_id;
+end;
+$$;
+```
+
+b. Выполните процедуру с параметрами: `job_id`='SY_ANAL', `min_salary`=7000, `max_salary`=140 (ожидается ошибка).
+
+Вставьте скриншот ошибки.
+![Результат выполнения процедуры](./images/sem08_03.png)
+
+c. Отключите триггеры на таблицах `EMPLOYEES`, `JOBS`.
+
+Ответ:
+```sql
+alter table employees disable trigger all;
+alter table jobs      disable trigger all;
+```
+
+d. Повторно выполните процедуру с корректными параметрами: `min_salary`=7000, `max_salary`=14000.
+
+Ответ:
+```sql
+call upd_jobsal('SY_ANAL', 7000, 14000);
+```
+
+Вставьте скриншот результата выполнения.
+![Результат выполнения процедуры](./images/sem08_04.png)
+
+e. Проверьте изменения в таблице `JOBS`.
+
+Вставьте скриншот изменений.
+![Результат выполнения запроса](./images/sem08_05.png)
+
+f. Зафиксируйте изменения и включите триггеры обратно.
+
+Ответ:
+```sql
+commit;
+
+alter table employees enable trigger all;
+alter table jobs      enable trigger all;
+```
+
+---
+
+### Задание 4. Создание хранимой функции.
+
+**Цель:** Рассчитать стаж сотрудника.
+
+a. Создайте функцию `GET_YEARS_SERVICE`, принимающую идентификатор сотрудника и возвращающую его стаж работы (в годах). Добавьте обработку исключений на случай несуществующего сотрудника.
+
+Ответ:
+```sql
+create or replace function get_years_service(
+    p_employee_id integer
+)
+returns integer
+language plpgsql
+as $$
+declare
+    v_hire_date date;
+    v_years     integer;
+begin
+    select hire_date
+    into v_hire_date
+    from employees
+    where employee_id = p_employee_id;
+
+    if not found then
+        raise exception 'сотрудник с id % не существует', p_employee_id;
+    end if;
+
+    v_years := extract(year from age(current_date, v_hire_date));
+
+    return v_years;
+end;
+$$;
+```
+
+b. Вызовите функцию для сотрудника с ID 999, используя RAISE NOTICE (ожидается ошибка).
+
+Ответ:
+```sql
+do $$
+begin
+    raise notice 'Years of service for 999: %', get_years_service(999);
+end;
+$$;
+```
+
+Вставьте скриншот результата выполнения.
+![Результат выполнения функции](./images/sem08_06.png)
+
+c. Вызовите функцию для сотрудника с ID 105.
+
+Ответ:
+```sql
+select get_years_service(105);
+```
+
+Вставьте скриншот результата выполнения.
+![Результат выполнения функции](./images/sem08_07.png)
+
+d. Проверьте корректность данных запросом из таблиц `JOB_HISTORY` и `EMPLOYEES`.
+
+Вставьте скриншот результата.
+![Результат выполнения запроса](./images/sem08_08.png)
+
+---
+
+### Задание 5. Создание хранимой функции.
+
+**Цель:** Получить количество уникальных должностей сотрудника.
+
+a. Создайте функцию `GET_JOB_COUNT`, возвращающую количество уникальных должностей, на которых работал сотрудник (включая текущую). Используйте UNION и DISTINCT. Добавьте обработку исключений для несуществующего сотрудника.
+
+Ответ:
+```sql
+create or replace function get_job_count(
+    p_employee_id integer
+)
+returns integer
+language plpgsql
+as $$
+declare
+    v_cnt integer;
+begin
+    perform 1
+    from employees
+    where employee_id = p_employee_id;
+
+    if not found then
+        raise exception 'Сотрудник с id % не существует', p_employee_id;
+    end if;
+
+    select count(distinct job_id)
+    into v_cnt
+    from (
+        select job_id
+        from employees
+        where employee_id = p_employee_id
+
+        union
+
+        select job_id
+        from job_history
+        where employee_id = p_employee_id
+    ) j;
+
+    return v_cnt;
+end;
+$$;
+```
+
+b. Вызовите функцию для сотрудника с ID 176.
+
+Ответ:
+```sql
+select get_job_count(176);
+```
+
+Вставьте скриншот результата выполнения.
+![Результат выполнения функции](./images/sem08_09.png)
+
+---
+
+### Задание 6. Создание триггера.
+
+**Цель:** Проверить, что изменение зарплат должности не выводит текущие зарплаты сотрудников за новые пределы.
+
+a. Создайте триггер `CHECK_SAL_RANGE`, срабатывающий перед обновлением столбцов `MIN_SALARY` и `MAX_SALARY` таблицы `JOBS`. Триггер должен проверять текущие зарплаты сотрудников и выдавать исключение, если новая зарплата выходит за пределы заданного диапазона.
+
+Ответ:
+```sql
+create or replace function check_sal_range_fn()
+returns trigger
+language plpgsql
+as $$
+declare
+    v_dummy integer;
+begin
+    select 1
+    into v_dummy
+    from employees e
+    where e.job_id = new.job_id
+      and (
+            (new.min_salary is not null and e.salary < new.min_salary)
+         or (new.max_salary is not null and e.salary > new.max_salary)
+      )
+    limit 1;
+
+    if found then
+        raise exception
+            'Новый диапазон зарплат [% - %] не включает текущие зарплаты сотрудников для должности %',
+            new.min_salary, new.max_salary, new.job_id;
+    end if;
+
+    return new;
+end;
+$$;
+
+create trigger check_sal_range
+before update of min_salary, max_salary
+on jobs
+for each row
+execute function check_sal_range_fn();
+```
+
+b. Протестируйте триггер с диапазоном от 10000 до 20000 для должности AC_ACCOUNT (ожидается ошибка).
+
+Ответ:
+```sql
+update jobs
+set min_salary = 10000,
+    max_salary = 20000
+where job_id = 'AC_ACCOUNT';
+```
+
+Вставьте скриншот ошибки.
+![Результат выполнения триггера](./images/sem08_10.png)
+
+c. Затем установите диапазон от 8000 до 15000 и объясните результат.
+
+Вставьте скриншот результата и напишите объяснение.
+![Результат выполнения триггера](./images/sem08_11.png)
+
+Объяснение:
+```markdown
+-- Ваш ответ здесь
+```
+Если посмотреть таблицу employees, то можно увидеть, что у должности AC_ACCOUNT есть только один сотрудник с зарплатой 8300. Эта зарплата находится внутри нового диапазона от 8000 до 15000, поэтому триггер не выдал ошибку и обновление прошло успешно.
+---
+
